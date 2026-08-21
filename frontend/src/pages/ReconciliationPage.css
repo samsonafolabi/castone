@@ -1,0 +1,269 @@
+.recon-screen {
+  --bg: #f7f4ec;
+  --ink: #1c1b17;
+  --brass: #b9924c;
+  --brass-tint: #f1e7d3;
+  --muted: #8b8672;
+  --border: #e4dcc8;
+  --card-bg: #ffffff;
+  --error: #a6402c;
+  --success: #4c7a5a;
+  --flag-bg: #fbeeea;
+
+  min-height: 100vh;
+  min-height: 100dvh;
+  background: var(--bg);
+  font-family: "Inter", sans-serif;
+  padding: 20px 18px 40px;
+}
+
+.recon-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.recon-back {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--ink);
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.recon-title {
+  font-family: "Fraunces", serif;
+  font-weight: 600;
+  font-size: 19px;
+  color: var(--ink);
+  margin: 0;
+}
+
+.recon-subtitle {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 2px 0 0;
+}
+
+.recon-error {
+  font-size: 13px;
+  color: var(--error);
+  background: rgba(166, 64, 44, 0.08);
+  border: 1px solid rgba(166, 64, 44, 0.25);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.recon-date-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.recon-date-input {
+  font-size: 15px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color-scheme: light;
+}
+
+.recon-hint {
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.recon-loading {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.recon-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recon-count-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 14px;
+}
+
+.recon-count-item__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.recon-count-item__input {
+  width: 80px;
+  font-size: 15px;
+  text-align: right;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color-scheme: light;
+}
+
+.recon-submit,
+.recon-close {
+  width: 100%;
+  font-weight: 600;
+  font-size: 14px;
+  color: #fff;
+  background: var(--ink);
+  border: none;
+  border-radius: 8px;
+  padding: 13px;
+  cursor: pointer;
+}
+
+.recon-submit:disabled,
+.recon-close:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.recon-summary {
+  font-size: 13.5px;
+  font-weight: 600;
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+}
+
+.recon-summary--ok {
+  color: var(--success);
+  background: rgba(76, 122, 90, 0.08);
+  border: 1px solid rgba(76, 122, 90, 0.25);
+}
+
+.recon-summary--flagged {
+  color: var(--error);
+  background: var(--flag-bg);
+  border: 1px solid rgba(166, 64, 44, 0.25);
+}
+
+.recon-review-item {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.recon-review-item--flagged {
+  border-color: var(--error);
+  background: var(--flag-bg);
+}
+
+.recon-review-item__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.recon-review-item__name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.recon-review-item__badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--success);
+}
+
+.recon-review-item__badge--flagged {
+  color: var(--error);
+}
+
+.recon-review-item__detail {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.recon-note {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.recon-last-close {
+  font-size: 12.5px;
+  color: var(--muted);
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 14px;
+}
+
+.recon-note input {
+  flex: 1;
+  font-size: 13px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  color-scheme: light;
+}
+
+.recon-note button {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--brass);
+  background: var(--brass-tint);
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.recon-close-success {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--success);
+  background: rgba(76, 122, 90, 0.08);
+  border: 1px solid rgba(76, 122, 90, 0.25);
+  border-radius: 10px;
+  padding: 14px;
+  text-align: center;
+}
+
+.recon-back-to-count {
+  width: 100%;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px;
+}
