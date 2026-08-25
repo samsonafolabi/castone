@@ -1,7 +1,7 @@
 # Castone — Hotel Operations App
 
 **Product & Engineering Reference Doc**
-Last updated: August 11, 2026
+Last updated: August 19, 2026
 
 ---
 
@@ -11,8 +11,6 @@ A mobile-first web app built for Castone Royal Hotel & Suites, solving two real,
 
 1. **Bar/drinks stock reconciliation** — currently done by hand on paper, error-prone, hard to catch missing stock or miscounts.
 2. **Guest registration** — currently a paper lodger's form (security data capture), digitized 1:1.
-
-**Strategic framing:** built for one real user (the founder's father, an actual hotel owner) first. If it solves his pain, it's a validated wedge into other local hotels/restaurants facing the same problem — an underserved market VCs ignore but that has real willingness to pay. Also doubles as a production-grade portfolio project.
 
 **Design principle carried through the whole build:** match the owner's and staff's _existing_ mental model and paper-based workflow as closely as possible. Every time we considered a "more powerful" version of a feature (e.g. per-sale logging instead of end-of-day totals), we chose the version that matched how people already work, on the reasoning that adoption beats theoretical robustness.
 
@@ -61,19 +59,25 @@ Bar/drinks catalog. `id, hotel_id, name, category, unit_price, created_at, delet
 ### `stock_entries`
 
 The core daily reconciliation table. One row per product per day.
-`id, hotel_id, product_id, entry_date, opening_stock, purchases, sales_qty, closing_stock, unit_price, submitted_by, submitted_at`
+`id, hotel_id, product_id, entry_date, opening_stock, purchases, sales_qty, closing_stock, unit_price, submitted_by, submitted_at, entry_type`
+
+`entry_type` is `'daily' | 'month_reset'` (default `'daily'`) — distinguishes a normal day's entry from the corrective row inserted the day after a monthly close. See §6.6.
 
 Unique constraint: `(hotel_id, product_id, entry_date)` — one entry per product per day (upsert on conflict, see §6).
 
-### `monthly_stock_counts` (table exists, route not built)
+### `monthly_stock_counts` — ✅ built
 
-For the physical-count-vs-system-count check, done monthly (not daily — see §7).
+For the physical-count-vs-system-count check, done monthly (not daily — see §6.3).
 `id, hotel_id, product_id, count_date, system_closing_stock, physical_count, discrepancy, status (ok|flagged), counted_by, reviewed_by, reviewed_at, admin_note, created_at`
 
-### `monthly_closes` (table exists, route not built)
+Unique constraint: `(hotel_id, product_id, count_date)` — upsert on conflict, same-day resubmission overwrites.
 
-Locks a month, stores the revenue summary.
-`id, hotel_id, month, total_revenue, closed_by, closed_at`
+### `monthly_closes` — ✅ built
+
+Locks a reconciliation period, stores the revenue summary. Redesigned mid-build — see §6.7 for why.
+`id, hotel_id, count_date, period_start, period_end, total_revenue, closed_by, closed_at`
+
+The original `month DATE NOT NULL` column (from the first schema draft) was dropped — superseded by `count_date`/`period_start`/`period_end` once the count date was confirmed to float (1st–3rd of the new month) rather than align to a calendar boundary. Unique constraint: `(hotel_id, count_date)`.
 
 ---
 
@@ -99,6 +103,8 @@ Locks a month, stores the revenue summary.
 | Update product price                                   | ❌    | ✅ (password-gated action per owner's explicit rule) |
 | Create/deactivate users                                | ❌    | ✅                                                   |
 | Trigger monthly close                                  | ❌    | ✅                                                   |
+| Submit monthly physical stock count                    | ❌    | ✅                                                   |
+| Add admin notes on flagged discrepancies               | ❌    | ✅                                                   |
 
 **Known gap, deliberately deferred:** token is stored in `localStorage`, which is readable by any JS on the page (XSS risk). Acceptable while learning/building; flagged as a **pre-launch** requirement to migrate to httpOnly, secure, sameSite cookies before real guest/staff/payment data flows through the app in production.
 
@@ -159,6 +165,43 @@ day_total = sum of amount across all products for that hotel + date
 
 `GET /stock-entries` returns both. Scope of `day_total` differs by role — for staff it's the sum of only their own submitted entries; for admin it's the whole hotel's day — same route, same field name, different `WHERE` filter, matching the confirmed permission ("staff sees their own product totals only").
 
+### 6.6 — Monthly Reconciliation: the full design, and how we got there
+
+Built out fully in this pass (backend + frontend), after several rounds of correction against real feedback from the owner.
+
+**Timing, confirmed with the owner:** the physical count isn't tied to calendar month-end — _"we select a convenient day between the 1st & 3rd of the new month for the stock taking,"_ and _"we generated the opening stock of new month automatically from the results of stock taking."_ Also confirmed: the count happens **in one sitting, all products at once** — not spread across days. This is why `monthly_closes` was redesigned around a floating `count_date` rather than a fixed calendar `month` (see schema note above).
+
+**The hard problem: real selling still happens on count day.** Early designs assumed count day could be treated as a clean cutoff. In reality, the owner counts _whenever he's free that day_ — could be morning, could be afternoon — and staff keep selling before and after. Since the system only logs one total per day (no timestamps, Model A), there's no way to precisely split "sold before the count" from "sold after."
+
+**The resolved design — deliberately simple over precise:**
+
+- **Count day itself is left completely untouched.** Staff logs that day's sales/purchases exactly like any other day — no special handling, no timing awareness required.
+- The physical count is compared against **the last fully-settled day** (the day _before_ count day) — not count day itself, since count day isn't finished yet at the moment of counting anyway.
+- **The correction takes effect starting the day _after_ the count** — a `month_reset`-typed row is inserted for that date, with `opening_stock` set from the physical count instead of carried forward from the math. That day's own real sales/purchases still get logged normally on top of it.
+- This leaves an acknowledged, accepted imprecision — some of count day's activity happened before counting, some after, and the system doesn't try to split them. Reasoning: _"you're not trying to be more precise than the process you're replacing."_ The paper-based process had the same fuzziness.
+
+**Blind entry + flag-don't-correct, applied here too:** the count-entry screen shows no system numbers while entering — plain empty fields per product, submitted once as a single bulk action. Discrepancies are surfaced only after submission, for admin review with an optional note. Nothing is ever auto-corrected.
+
+**Sequencing, explicitly confirmed:** count always happens **before** close — close is blocked by the backend if no count exists for that date, since closing without counting would mean locking in unverified numbers.
+
+### 6.7 — `monthly_closes` schema redesign
+
+The first schema draft used a fixed `month DATE NOT NULL` column, written before the floating count-date requirement was confirmed. This caused a real bug during testing (`null value in column "month" violates not-null constraint`) once the route was rewritten around `count_date`/`period_start`/`period_end` without dropping the old column. Fixed by dropping `month` entirely — it added nothing the new columns didn't already cover.
+
+### 6.8 — What closing a period actually does (transactional)
+
+1. Guards: a count must exist for `count_date`; that exact `count_date` must not already be closed.
+2. Computes `period_start` — the day after the previous close, or the earliest `stock_entries` date if this is the first-ever close.
+3. Sums `sales_qty × unit_price` across the whole period for `total_revenue`.
+4. Inserts one `month_reset`-typed row per product, dated the day _after_ `count_date`, with `opening_stock` = physical count. Uses `ON CONFLICT` so it never overwrites real purchases/sales already logged for that date — see §7 for the known edge case this creates.
+5. Inserts the `monthly_closes` record.
+
+All five steps run in a single Postgres transaction — if any step fails, nothing partial is left behind.
+
+### 6.9 — Bug: re-counting the day right after a close
+
+Discovered during real testing (owner counted, closed, then tested a second count the next day). The comparison logic originally always looked at "the most recent entry **strictly before** count*date" — but the `month_reset` row from the prior close lands **exactly on** that next date, so the strict `<` comparison skipped past it and compared against stale, pre-correction numbers instead. Fixed by checking for a same-day `month_reset` row first, and using its `opening_stock` directly when one exists, only falling back to the prior-day lookup otherwise. A second guard was added alongside this: submitting a count using a `count_date` that's \_already been closed* is now explicitly rejected, rather than silently producing a confusing comparison.
+
 ---
 
 ## 7. Notable bugs fixed during build (worth remembering)
@@ -170,6 +213,10 @@ day_total = sum of amount across all products for that hotel + date
 5. **`verbatimModuleSyntax` TypeScript config errors** — type-only imports (e.g. `FormEvent`) needed the explicit `type` keyword: `import { useState, type FormEvent } from 'react'`.
 6. **Grey/dark-mode form fields** — Vite's default `index.css` boilerplate shipped with `color-scheme: light dark` and a `prefers-color-scheme: dark` media block, which silently overrode custom input/button styling on dark-mode devices. Fixed by stripping the boilerplate entirely and forcing `color-scheme: light` globally.
 7. **Browser autofill white/yellow tint** — fixed with the standard `-webkit-autofill` inset `box-shadow` override trick.
+8. **Frontend date-shift bug in the Stock Entries date picker** — same root cause as bug #4, but on the frontend this time: `todayStr()`/`shiftDate()` used `.toISOString().slice(0,10)`, which always converts through UTC. In WAT (UTC+1), local midnight becomes 11pm the previous day in UTC — so the back-arrow appeared to jump two days instead of one, and the forward-arrow appeared to do nothing. Fixed by building the date string manually from `getFullYear()/getMonth()/getDate()` (local time), never touching `.toISOString()` for calendar-date values. Second occurrence of this exact class of bug in the project — now treated as a standing rule.
+9. **`monthly_closes` NOT NULL constraint violation** — the table's original `month DATE NOT NULL` column was never dropped after the schema was redesigned around `count_date`/`period_start`/`period_end`; every close attempt failed until the leftover column was dropped. See §6.7.
+10. **Stale comparison data when re-counting the day after a close** — see §6.9 for the full trace; fixed by detecting a same-day `month_reset` row before falling back to the prior day's closing stock.
+11. **Missing auth middleware on `guests.ts` and `users.ts`** — both files were written before `requireAuth`/`requireAdmin` existed and never retrofitted; every route was fully unauthenticated until fixed on Aug 11 (see §5).
 
 ---
 
@@ -189,19 +236,24 @@ day_total = sum of amount across all products for that hotel + date
 ### Backend
 
 - ✅ `hotels` — create, list
-- ✅ `users` — create, list (admin creates staff accounts)
+- ✅ `users` — create, list (admin creates staff accounts), now properly authenticated
 - ✅ `auth` — login (bcrypt + JWT), `requireAuth` / `requireAdmin` middleware
-- ✅ `guests` — full CRUD, soft delete
+- ✅ `guests` — full CRUD, soft delete, now properly authenticated + tenant-scoped
 - ✅ `products` — create (with required initial stock seeding, transactional), list (with live `current_stock`), edit, price update (separate admin-gated route), soft delete
-- ✅ `stock-entries` — daily entry (upsert same-day), auto-carried opening stock, computed closing stock, price snapshot, computed `amount` + role-scoped `day_total`, safety check against negative closing stock
+- ✅ `stock-entries` — daily entry (upsert same-day), auto-carried opening stock, computed closing stock, price snapshot, computed `amount` + role-scoped `day_total`, safety check against negative closing stock, timezone-safe `entry_date`, `?date=` query support
+- ✅ `monthly-stock-counts` — bulk blind submission, discrepancy calculation (with same-day-reset-aware comparison), admin notes/review
+- ✅ `monthly-closes` — count-before-close guard, duplicate-close guard, transactional close (revenue summary + `month_reset` row insertion + lock), close history endpoint
 
 ### Frontend
 
 - ✅ Login screen (styled, JWT flow, real logo)
 - ✅ Home screen (six-module grid matching the hand-drawn wireframe)
-- ✅ Stock Entries screen (expandable list, current-stock display, Supply/Sales inputs, day total)
+- ✅ Stock Entries screen (expandable list, current-stock display, Supply/Sales inputs, day total, **date navigation with read-only history view**)
 - ✅ Products screen (list with current stock + price, admin-only add-product form, admin-only price editing)
 - ✅ Guests screen (register, view, inline edit, admin-only remove)
+- ✅ Monthly Reconciliation screen (blind count entry → review with flagged discrepancies + notes → close, with persistent "last closed" state shown on every visit)
+
+**Five of six modules from the original hand-drawn wireframe are now fully built, backend and frontend, and tested against real data.**
 
 ---
 
@@ -209,18 +261,18 @@ day_total = sum of amount across all products for that hotel + date
 
 ### Backend
 
-- ⏳ `POST /monthly-stock-counts` — physical count entry (blind, per the "flag don't auto-correct" principle), discrepancy calculation against system's running `closing_stock`
-- ⏳ `POST /monthly-closes` — locks a month's entries, generates the revenue summary, resets next month's opening stock from the corrected physical count
 - ⏳ Past-date correction route for `stock_entries` — currently only same-day upsert exists; no sanctioned way to fix a typo from days ago except direct DB editing
-- ⏳ Date-range query support for `stock-entries` — route already accepts `?date=`, but this needs to be generalized (e.g. date-range) to properly power both history browsing and monthly reconciliation
+- ⏳ Monthly revenue rollup as its own queryable endpoint — currently only computed inline during a close; Dashboard will need this independently
 
 ### Frontend
 
-- ⏳ **History / past-date view for Stock Entries** — currently only shows "today"; data is safely persisted but nothing in the UI lets you look back at yesterday or any past day yet
-- ⏳ Monthly Reconciliation screen
-- ⏳ Dashboard/Reporting screen — flagged discrepancies, daily/monthly revenue summaries, guest occupancy snapshot, calendar view (the screen your hand-drawn sketch labeled "Dashboard/Reporting")
-- ⏳ Real client-side routing (currently a simple `view` state string in `App.tsx`; fine for 5 screens, will want `react-router` if the app keeps growing)
+- ⏳ **Dashboard/Reporting screen** — the last unbuilt module from the original wireframe. Flagged discrepancies, daily/monthly revenue summaries, guest occupancy snapshot, calendar view
+- ⏳ Real client-side routing (currently a simple `view` state string in `App.tsx`; fine for 6 screens, will want `react-router` if the app keeps growing)
 - ⏳ Admin UI for creating/deactivating staff accounts (currently only possible via direct API calls)
+
+### New — deployment
+
+- ⏳ Deploy backend + frontend live so real users (owner, staff) can test on their own phones, not just localhost. Not yet started — see deployment notes below.
 
 ### Parked for later (deliberately, not forgotten)
 
@@ -232,8 +284,26 @@ day_total = sum of amount across all products for that hotel + date
 
 ---
 
-## 11. Open questions to revisit
+## 11. Deployment — not yet started
+
+Goal: get this onto real phones (owner + staff) for genuine daily-use testing, not just localhost.
+
+**What needs to happen, roughly:**
+
+- **Database:** already on Supabase — no change needed, just confirm the connection string used in production points to the same (or a separate production) Supabase project.
+- **Backend:** needs a live host (options: Railway, Render, Fly.io — all have straightforward Node/Express support and free/cheap tiers suitable for one hotel's traffic). Environment variables (`DATABASE_URL`, `JWT_SECRET`) need to be set on the host, not committed to the repo.
+- **Frontend:** needs a static host (Vercel or Netlify are the simplest for a Vite app) with the `API` base URL switched from `http://localhost:4000` to the deployed backend's real URL — currently hardcoded as `http://localhost:4000` across multiple page files, so this needs to become an environment variable (`VITE_API_URL` or similar) before deploying, not hardcoded per-environment.
+- **CORS:** the backend's `cors()` middleware currently allows all origins by default in dev; before going live, worth restricting it to the actual deployed frontend URL.
+- **Before real staff/guest data flows through a public URL:** the `localStorage` token storage gap (see §5) becomes meaningfully higher-stakes than it was on localhost — worth prioritizing the httpOnly cookie migration around this same time, not indefinitely after.
+
+Not yet decided: which hosts specifically, custom domain vs. free subdomains, and whether staging/production should be separate Supabase projects or one shared one during this early testing phase.
+
+---
+
+## 12. Open questions to revisit
 
 - Should "Edit guest details" stay available to all staff, or become admin-only like "Remove guest"? (Currently: any logged-in user can edit; only admin can remove.)
-- When Monthly Reconciliation is built: should a flagged discrepancy block anything operationally, or purely inform the admin dashboard (current design intent: purely informational, never blocking)?
-- Multi-hotel distribution (the original "other hotels/restaurants have this pain too" thesis) — not yet tested outside the founder's own family hotel; worth revisiting once the app is in daily real use for a few weeks.
+- Confirmed: flagged discrepancies are purely informational, never operationally blocking — matches the built behavior.
+- POS/payment-channel reconciliation (matching total revenue against actual cash/POS/transfer received) — raised but explicitly left undecided, not yet scoped at all.
+- Store-to-bar transfer tracking — still parked; revisit only if it becomes an observed real problem, same as originally reasoned.
+- Multi-hotel distribution (the original "other hotels/restaurants have this pain too" thesis) — not yet tested outside the founder's own family hotel; worth revisiting once the app is in daily real use for a few weeks, which deployment (see §11) is meant to enable.
