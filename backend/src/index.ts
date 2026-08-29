@@ -17,6 +17,7 @@ import revenueRoutes from "./routes/revenue";
 
 const app = express();
 
+app.set("trust proxy", 1);
 const allowedOrigins = [
   "http://localhost:5173",
   ...(process.env.FRONTEND_URL ? process.env.FRONTEND_URL.split(",") : []),
