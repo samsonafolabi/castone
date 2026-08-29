@@ -12,7 +12,7 @@ interface User {
 }
 
 export default function UsersPage({
-  role,
+  
   onBack,
 }: {
   role: string;
