@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import "./ReconciliationPage.css";
-
-const API = "http://localhost:4000";
+import { apiFetch } from "../config";
 
 interface Product {
   id: string;
@@ -48,12 +47,6 @@ export default function ReconciliationPage({ onBack }: { onBack: () => void }) {
   const [closeSuccess, setCloseSuccess] = useState<string | null>(null);
   const [lastClose, setLastClose] = useState<CloseRecord | null>(null);
 
-  const token = localStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-
   useEffect(() => {
     loadProducts();
     loadCloseHistory();
@@ -61,8 +54,9 @@ export default function ReconciliationPage({ onBack }: { onBack: () => void }) {
 
   async function loadProducts() {
     setLoading(true);
+    setError("");
     try {
-      const res = await fetch(`${API}/products`, { headers });
+      const res = await apiFetch("/products");
       const data = await res.json();
       setProducts(data);
     } catch {
@@ -74,7 +68,7 @@ export default function ReconciliationPage({ onBack }: { onBack: () => void }) {
 
   async function loadCloseHistory() {
     try {
-      const res = await fetch(`${API}/monthly-closes`, { headers });
+      const res = await apiFetch("/monthly-closes");
       const data = await res.json();
       if (Array.isArray(data) && data.length > 0) {
         setLastClose(data[0]);
@@ -97,9 +91,8 @@ export default function ReconciliationPage({ onBack }: { onBack: () => void }) {
     setSubmitting(true);
     setError("");
     try {
-      const res = await fetch(`${API}/monthly-stock-counts`, {
+      const res = await apiFetch("/monthly-stock-counts", {
         method: "POST",
-        headers,
         body: JSON.stringify({ count_date: countDate, counts: entries }),
       });
       const data = await res.json();
@@ -118,9 +111,8 @@ export default function ReconciliationPage({ onBack }: { onBack: () => void }) {
 
   async function loadReview() {
     try {
-      const res = await fetch(
-        `${API}/monthly-stock-counts?count_date=${countDate}`,
-        { headers },
+      const res = await apiFetch(
+        `/monthly-stock-counts?count_date=${countDate}`,
       );
       const data = await res.json();
       setResults(data);
@@ -132,9 +124,8 @@ export default function ReconciliationPage({ onBack }: { onBack: () => void }) {
   async function handleSaveNote(id: string) {
     const note = noteDrafts[id];
     try {
-      await fetch(`${API}/monthly-stock-counts/${id}`, {
+      await apiFetch(`/monthly-stock-counts/${id}`, {
         method: "PATCH",
-        headers,
         body: JSON.stringify({ admin_note: note }),
       });
       await loadReview();
@@ -147,9 +138,8 @@ export default function ReconciliationPage({ onBack }: { onBack: () => void }) {
     setClosing(true);
     setError("");
     try {
-      const res = await fetch(`${API}/monthly-closes`, {
+      const res = await apiFetch("/monthly-closes", {
         method: "POST",
-        headers,
         body: JSON.stringify({ count_date: countDate }),
       });
       const data = await res.json();

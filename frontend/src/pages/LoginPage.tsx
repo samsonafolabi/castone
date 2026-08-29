@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from "react";
 import CastoneLogo from "../assets/CastoneLogo.svg";
+import { apiFetch } from "../config";
 import "./LoginPage.css";
 
 interface LoginPageProps {
-  onLoginSuccess: (user: any, token: string) => void;
+  onLoginSuccess: (user: any) => void;
 }
 
 export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
@@ -18,9 +19,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:4000/auth/login", {
+      const res = await apiFetch("/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
@@ -30,8 +30,8 @@ export default function LoginPage({ onLoginSuccess }: LoginPageProps) {
         return;
       }
 
-      localStorage.setItem("token", data.token);
-      onLoginSuccess(data.user, data.token);
+      // No token to store — the httpOnly cookie is already set by the server
+      onLoginSuccess(data.user);
     } catch {
       setError("Cannot reach the server. Check your connection.");
     } finally {

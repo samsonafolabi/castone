@@ -3,6 +3,7 @@ import { Router } from "express";
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import rateLimit from "express-rate-limit";
 import { pool } from "../db";
 
 const router = Router();
@@ -12,7 +13,19 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-router.post("/login", async (req, res) => {
+const isProd = process.env.NODE_ENV === "production";
+
+// 5 attempts per IP per 15 minutes — reasonable for a small hotel staff
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: "Too many login attempts. Try again in 15 minutes." },
+  skipSuccessfulRequests: true,
+});
+
+router.post("/login", loginLimiter, async (req, res) => {
   const parsed = loginSchema.safeParse(req.body);
   if (!parsed.success)
     return res.status(400).json({ error: parsed.error.flatten() });
@@ -39,8 +52,14 @@ router.post("/login", async (req, res) => {
       { expiresIn: "7d" },
     );
 
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? "strict" : "lax",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    });
+
     res.json({
-      token,
       user: {
         id: user.id,
         full_name: user.full_name,
@@ -53,6 +72,11 @@ router.post("/login", async (req, res) => {
     console.error(err);
     res.status(500).json({ error: "Login failed" });
   }
+});
+
+router.post("/logout", (req, res) => {
+  res.clearCookie("token");
+  res.json({ message: "Logged out" });
 });
 
 export default router;

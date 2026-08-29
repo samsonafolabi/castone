@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import "./GuestsPage.css";
-
-const API = "http://localhost:4000";
+import { apiFetch } from "../config";
 
 interface Guest {
   id: string;
@@ -40,7 +39,6 @@ const emptyForm = {
 
 export default function GuestsPage({
   role,
-
   onBack,
 }: {
   role: string;
@@ -59,12 +57,6 @@ export default function GuestsPage({
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState(emptyForm);
 
-  const token = localStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-
   useEffect(() => {
     loadGuests();
   }, []);
@@ -73,7 +65,7 @@ export default function GuestsPage({
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API}/guests`, { headers });
+      const res = await apiFetch("/guests");
       const data = await res.json();
       setGuests(data);
     } catch {
@@ -92,9 +84,8 @@ export default function GuestsPage({
     setSaving(true);
     setError("");
     try {
-      const res = await fetch(`${API}/guests`, {
+      const res = await apiFetch("/guests", {
         method: "POST",
-        headers,
         body: JSON.stringify(form),
       });
       if (!res.ok) {
@@ -114,7 +105,7 @@ export default function GuestsPage({
   async function handleRemove(id: string) {
     setSaving(true);
     try {
-      await fetch(`${API}/guests/${id}`, { method: "DELETE", headers });
+      await apiFetch(`/guests/${id}`, { method: "DELETE" });
       await loadGuests();
       setOpenId(null);
     } catch {
@@ -154,9 +145,8 @@ export default function GuestsPage({
     setSaving(true);
     setError("");
     try {
-      const res = await fetch(`${API}/guests/${id}`, {
+      const res = await apiFetch(`/guests/${id}`, {
         method: "PATCH",
-        headers,
         body: JSON.stringify(editForm),
       });
       if (!res.ok) {

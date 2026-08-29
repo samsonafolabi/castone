@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import "./ProductsPage.css";
-
-const API = "http://localhost:4000";
+import { apiFetch } from "../config";
 
 interface Product {
   id: string;
@@ -34,12 +33,6 @@ export default function ProductsPage({
   });
   const [addSaving, setAddSaving] = useState(false);
 
-  const token = localStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-
   useEffect(() => {
     loadProducts();
   }, []);
@@ -48,7 +41,7 @@ export default function ProductsPage({
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${API}/products`, { headers });
+      const res = await apiFetch("/products");
       const data = await res.json();
       setProducts(data);
     } catch {
@@ -74,9 +67,8 @@ export default function ProductsPage({
     setSavingId(productId);
     setError("");
     try {
-      const res = await fetch(`${API}/products/${productId}/price`, {
+      const res = await apiFetch(`/products/${productId}/price`, {
         method: "PATCH",
-        headers,
         body: JSON.stringify({ unit_price: Number(draft) }),
       });
       const data = await res.json();
@@ -104,9 +96,8 @@ export default function ProductsPage({
     setAddSaving(true);
     setError("");
     try {
-      const res = await fetch(`${API}/products`, {
+      const res = await apiFetch("/products", {
         method: "POST",
-        headers,
         body: JSON.stringify({
           name: newProduct.name,
           category: newProduct.category || undefined,

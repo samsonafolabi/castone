@@ -2,7 +2,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { pool } from "../db";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requireAdmin } from "../middleware/auth";
 
 const router = Router();
 
@@ -12,6 +12,15 @@ const entrySchema = z.object({
   purchases: z.number().min(0).default(0),
   entry_date: z.string().optional(),
 });
+
+const correctionSchema = z
+  .object({
+    sales_qty: z.number().min(0).optional(),
+    purchases: z.number().min(0).optional(),
+  })
+  .refine((d) => d.sales_qty !== undefined || d.purchases !== undefined, {
+    message: "Provide at least one of sales_qty or purchases",
+  });
 
 // ============================================
 // POST /stock-entries — daily entry (staff or admin)
@@ -71,7 +80,7 @@ router.post("/", requireAuth, async (req, res) => {
       opening_stock = Number(priorResult.rows[0].closing_stock);
     }
 
-    // 3. Compute closing stock — all operands now guaranteed to be numbers
+    // 3. Compute closing stock
     const closing_stock = opening_stock + purchases - sales_qty;
     if (closing_stock < 0) {
       await client.query("ROLLBACK");
@@ -154,21 +163,157 @@ router.get("/", requireAuth, async (req, res) => {
         sales_qty,
         closing_stock: Number(r.closing_stock),
         unit_price,
-        amount: sales_qty * unit_price, // NEW — revenue for this product, today
+        amount: sales_qty * unit_price,
       };
     });
 
-    // Day total — sum of every product's amount
     const day_total = rows.reduce((sum, r) => sum + r.amount, 0);
 
     res.json({
       entries: rows,
-      day_total, // full total — admin only, per our earlier decision
+      day_total,
     });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Failed to fetch stock entries" });
   }
 });
+
+// ============================================
+// PATCH /stock-entries/:product_id/:entry_date — past-date correction (admin only)
+// Updates a historical entry and cascades opening/closing stock forward.
+// ============================================
+router.patch(
+  "/:product_id/:entry_date",
+  requireAuth,
+  requireAdmin,
+  async (req, res) => {
+    const parsed = correctionSchema.safeParse(req.body);
+    if (!parsed.success)
+      return res.status(400).json({ error: parsed.error.flatten() });
+
+    const { product_id, entry_date } = req.params;
+    const { sales_qty, purchases } = parsed.data;
+    const hotelId = req.user!.hotelId;
+    const userId = req.user!.userId;
+
+    const today = new Date().toISOString().slice(0, 10);
+    if (entry_date >= today) {
+      return res.status(400).json({
+        error:
+          "Same-day corrections should use POST /stock-entries. This route is for past dates only.",
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      // 1. Lock and verify the target entry exists
+      const targetResult = await client.query(
+        `SELECT * FROM stock_entries
+         WHERE hotel_id = $1 AND product_id = $2 AND entry_date = $3
+         FOR UPDATE`,
+        [hotelId, product_id, entry_date],
+      );
+      if (targetResult.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res
+          .status(404)
+          .json({ error: "Entry not found for this product and date" });
+      }
+
+      const target = targetResult.rows[0];
+      const newSalesQty =
+        sales_qty !== undefined ? sales_qty : Number(target.sales_qty);
+      const newPurchases =
+        purchases !== undefined ? purchases : Number(target.purchases);
+      const openingStock = Number(target.opening_stock);
+
+      const newClosingStock = openingStock + newPurchases - newSalesQty;
+      if (newClosingStock < 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({
+          error: `Correction would result in negative closing stock (${newClosingStock}). Opening: ${openingStock}, Purchases: ${newPurchases}, Sales: ${newSalesQty}`,
+        });
+      }
+
+      // 2. Update the target entry
+      await client.query(
+        `UPDATE stock_entries
+         SET sales_qty = $1, purchases = $2, closing_stock = $3,
+             submitted_by = $4, submitted_at = now()
+         WHERE hotel_id = $5 AND product_id = $6 AND entry_date = $7`,
+        [
+          newSalesQty,
+          newPurchases,
+          newClosingStock,
+          userId,
+          hotelId,
+          product_id,
+          entry_date,
+        ],
+      );
+
+      // 3. Cascade forward through all subsequent entries
+      const subsequent = await client.query(
+        `SELECT id, entry_date, entry_type, opening_stock, purchases, sales_qty
+         FROM stock_entries
+         WHERE hotel_id = $1 AND product_id = $2 AND entry_date > $3
+         ORDER BY entry_date ASC`,
+        [hotelId, product_id, entry_date],
+      );
+
+      let carryForward = newClosingStock;
+
+      for (const row of subsequent.rows) {
+        const rowPurchases = Number(row.purchases);
+        const rowSales = Number(row.sales_qty);
+        let nextOpening: number;
+        let nextClosing: number;
+
+        if (row.entry_type === "month_reset") {
+          // Physical count is authoritative — don't touch opening_stock
+          nextOpening = Number(row.opening_stock);
+          nextClosing = nextOpening + rowPurchases - rowSales;
+        } else {
+          nextOpening = carryForward;
+          nextClosing = nextOpening + rowPurchases - rowSales;
+        }
+
+        if (nextClosing < 0) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({
+            error: `Cascade would create negative closing stock (${nextClosing}) on ${row.entry_date}. Review the correction.`,
+          });
+        }
+
+        await client.query(
+          `UPDATE stock_entries
+           SET opening_stock = $1, closing_stock = $2
+           WHERE id = $3`,
+          [nextOpening, nextClosing, row.id],
+        );
+
+        carryForward = nextClosing;
+      }
+
+      await client.query("COMMIT");
+      res.json({
+        message: "Entry corrected",
+        entry_date,
+        product_id,
+        closing_stock: newClosingStock,
+        cascaded: subsequent.rows.length,
+      });
+    } catch (err) {
+      await client.query("ROLLBACK");
+      console.error(err);
+      res.status(500).json({ error: "Failed to correct entry" });
+    } finally {
+      client.release();
+    }
+  },
+);
 
 export default router;

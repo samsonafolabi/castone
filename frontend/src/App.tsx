@@ -5,15 +5,23 @@ import StockEntryPage from "./pages/StockEntryPage";
 import ProductsPage from "./pages/ProductsPage";
 import GuestsPage from "./pages/GuestsPage";
 import ReconciliationPage from "./pages/ReconciliationPage";
-
+import { apiFetch } from "./config";
+import DashboardPage from "./pages/DashboardPage";
+import UsersPage from "./pages/UsersPage";
 function App() {
   const [user, setUser] = useState<any>(null);
   const [view, setView] = useState<
-    "home" | "stock" | "products" | "guests" | "reconciliation"
+    | "home"
+    | "stock"
+    | "products"
+    | "guests"
+    | "reconciliation"
+    | "dashboard"
+    | "setup"
   >("home");
 
-  function handleLogout() {
-    localStorage.removeItem("token");
+  async function handleLogout() {
+    await apiFetch("/auth/logout", { method: "POST" });
     setUser(null);
     setView("home");
   }
@@ -23,6 +31,8 @@ function App() {
     if (module === "products") setView("products");
     if (module === "guests") setView("guests");
     if (module === "reconciliation") setView("reconciliation");
+    if (module === "dashboard") setView("dashboard");
+    if (module === "setup") setView("setup");
   }
 
   if (!user) {
@@ -30,11 +40,15 @@ function App() {
   }
 
   if (view === "stock") {
-    return <StockEntryPage onBack={() => setView("home")} />;
+    return <StockEntryPage role={user.role} onBack={() => setView("home")} />;
   }
 
   if (view === "products") {
     return <ProductsPage role={user.role} onBack={() => setView("home")} />;
+  }
+
+  if (view === "setup") {
+    return <UsersPage role={user.role} onBack={() => setView("home")} />;
   }
 
   if (view === "guests") {
@@ -46,6 +60,10 @@ function App() {
         onBack={() => setView("home")}
       />
     );
+  }
+
+  if (view === "dashboard") {
+    return <DashboardPage role={user.role} onBack={() => setView("home")} />;
   }
 
   if (view === "reconciliation") {

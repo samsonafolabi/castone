@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
+import { apiFetch } from "../config";
 import "./StockEntryPage.css";
-
-const API = "http://localhost:4000";
 
 interface Product {
   id: string;
@@ -26,7 +25,7 @@ function todayStr() {
 
 function shiftDate(dateStr: string, days: number) {
   const [y, m, d] = dateStr.split("-").map(Number);
-  const date = new Date(y, m - 1, d); // local date, no timezone involved
+  const date = new Date(y, m - 1, d);
   date.setDate(date.getDate() + days);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
@@ -40,7 +39,13 @@ function formatDisplayDate(dateStr: string) {
   });
 }
 
-export default function StockEntryPage({ onBack }: { onBack: () => void }) {
+export default function StockEntryPage({
+  role,
+  onBack,
+}: {
+  role: string;
+  onBack: () => void;
+}) {
   const [products, setProducts] = useState<Product[]>([]);
   const [entries, setEntries] = useState<Record<string, Entry>>({});
   const [openId, setOpenId] = useState<string | null>(null);
@@ -56,12 +61,6 @@ export default function StockEntryPage({ onBack }: { onBack: () => void }) {
   const isToday = selectedDate === todayStr();
   const isFuture = selectedDate > todayStr();
 
-  const token = localStorage.getItem("token");
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-
   useEffect(() => {
     loadData(selectedDate);
     setOpenId(null);
@@ -72,8 +71,8 @@ export default function StockEntryPage({ onBack }: { onBack: () => void }) {
     setError("");
     try {
       const [productsRes, entriesRes] = await Promise.all([
-        fetch(`${API}/products`, { headers }),
-        fetch(`${API}/stock-entries?date=${date}`, { headers }),
+        apiFetch("/products"),
+        apiFetch(`/stock-entries?date=${date}`),
       ]);
       const productsData = await productsRes.json();
       const entriesData = await entriesRes.json();
@@ -94,7 +93,29 @@ export default function StockEntryPage({ onBack }: { onBack: () => void }) {
   }
 
   function openProduct(id: string) {
-    if (!isToday) return; // read-only for past/future dates
+    if (isFuture) return;
+
+    if (!isToday) {
+      // Past date: only admin can edit an existing entry
+      const entry = entries[id];
+      if (role !== "admin" || !entry) return;
+
+      if (openId === id) {
+        setOpenId(null);
+        return;
+      }
+      setDrafts((d) => ({
+        ...d,
+        [id]: {
+          sales_qty: String(entry.sales_qty),
+          purchases: String(entry.purchases),
+        },
+      }));
+      setOpenId(id);
+      return;
+    }
+
+    // Today: normal entry flow
     if (openId === id) {
       setOpenId(null);
       return;
@@ -117,15 +138,28 @@ export default function StockEntryPage({ onBack }: { onBack: () => void }) {
     setSavingId(productId);
     setError("");
     try {
-      const res = await fetch(`${API}/stock-entries`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          product_id: productId,
-          sales_qty: Number(draft.sales_qty),
-          purchases: Number(draft.purchases || 0),
-        }),
-      });
+      let res;
+      if (!isToday) {
+        // Past-date correction (admin only)
+        res = await apiFetch(`/stock-entries/${productId}/${selectedDate}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            sales_qty: Number(draft.sales_qty),
+            purchases: Number(draft.purchases || 0),
+          }),
+        });
+      } else {
+        // Today's entry
+        res = await apiFetch("/stock-entries", {
+          method: "POST",
+          body: JSON.stringify({
+            product_id: productId,
+            sales_qty: Number(draft.sales_qty),
+            purchases: Number(draft.purchases || 0),
+          }),
+        });
+      }
+
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Failed to save entry.");
@@ -194,7 +228,9 @@ export default function StockEntryPage({ onBack }: { onBack: () => void }) {
 
       {!isToday && !isFuture && (
         <div className="stock-readonly-banner">
-          Viewing past entries — read only. Only today's entries can be edited.
+          {role === "admin"
+            ? "Viewing past entries — tap any saved entry to edit."
+            : "Viewing past entries — read only."}
         </div>
       )}
 
@@ -219,6 +255,7 @@ export default function StockEntryPage({ onBack }: { onBack: () => void }) {
             const entry = entries[p.id];
             const isOpen = openId === p.id;
             const draft = drafts[p.id] ?? { sales_qty: "", purchases: "0" };
+            const canEditPast = !isToday && role === "admin" && !!entry;
 
             return (
               <li
@@ -226,7 +263,7 @@ export default function StockEntryPage({ onBack }: { onBack: () => void }) {
                 className={`stock-item ${isOpen ? "stock-item--open" : ""}`}
               >
                 <button
-                  className={`stock-item__row ${!isToday ? "stock-item__row--readonly" : ""}`}
+                  className={`stock-item__row ${!isToday && !canEditPast ? "stock-item__row--readonly" : ""}`}
                   onClick={() => openProduct(p.id)}
                 >
                   <span className="stock-item__name">
@@ -248,11 +285,18 @@ export default function StockEntryPage({ onBack }: { onBack: () => void }) {
                   )}
                 </button>
 
-                {isOpen && isToday && (
+                {isOpen && (
                   <div className="stock-item__form">
-                    <p className="stock-item__stock-hint">
-                      Currently {p.current_stock} in stock
-                    </p>
+                    {!isToday && (
+                      <p className="stock-item__stock-hint">
+                        Editing {formatDisplayDate(selectedDate)}
+                      </p>
+                    )}
+                    {isToday && (
+                      <p className="stock-item__stock-hint">
+                        Currently {p.current_stock} in stock
+                      </p>
+                    )}
                     <label>
                       <span>Sales qty</span>
                       <input
@@ -291,7 +335,11 @@ export default function StockEntryPage({ onBack }: { onBack: () => void }) {
                       onClick={() => handleSave(p.id)}
                       disabled={savingId === p.id || draft.sales_qty === ""}
                     >
-                      {savingId === p.id ? "Saving…" : "Save"}
+                      {savingId === p.id
+                        ? "Saving…"
+                        : isToday
+                          ? "Save"
+                          : "Update entry"}
                     </button>
                   </div>
                 )}

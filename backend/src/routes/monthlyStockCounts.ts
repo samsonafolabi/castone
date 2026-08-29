@@ -121,13 +121,21 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// ============================================
 // GET /monthly-stock-counts?count_date=... — review screen data (admin only)
-// ============================================
+// If count_date is omitted, returns the most recent count available.
 router.get("/", requireAuth, requireAdmin, async (req, res) => {
-  const count_date =
-    (req.query.count_date as string) ?? new Date().toISOString().slice(0, 10);
+  let count_date = req.query.count_date as string | undefined;
+
   try {
+    if (!count_date) {
+      const latestResult = await pool.query(
+        `SELECT MAX(count_date) AS latest FROM monthly_stock_counts WHERE hotel_id = $1`,
+        [req.user!.hotelId],
+      );
+      count_date = latestResult.rows[0]?.latest;
+      if (!count_date) return res.json([]);
+    }
+
     const result = await pool.query(
       `SELECT msc.*, p.name AS product_name FROM monthly_stock_counts msc
        JOIN products p ON p.id = msc.product_id
