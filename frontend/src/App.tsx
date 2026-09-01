@@ -48,7 +48,7 @@ function App() {
   }
 
   if (view === "setup") {
-    return <UsersPage role={user.role} onBack={() => setView("home")} />;
+    return <UsersPage onBack={() => setView("home")} />;
   }
 
   if (view === "guests") {
