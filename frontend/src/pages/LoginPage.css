@@ -188,6 +188,48 @@
   transition: background-color 5000s ease-in-out 0s;
 }
 
+.login-password-wrap {
+  position: relative;
+}
+
+.login-password-wrap input {
+  width: 100%;
+  padding-right: 44px;
+  box-sizing: border-box;
+}
+
+.login-eye {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 0;
+}
+
+.login-eye:hover {
+  color: var(--brass);
+}
+
+.login-eye svg {
+  width: 18px;
+  height: 18px;
+}
+
+.login-eye:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .login-card,
   .login-card__stripe {
