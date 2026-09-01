@@ -193,6 +193,45 @@
   background: rgba(166, 64, 44, 0.08);
 }
 
+.users-field--password {
+  position: relative;
+}
+
+.users-field--password input {
+  padding-right: 44px;
+}
+
+.users-eye {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: color 150ms ease;
+}
+
+.users-eye:hover {
+  color: var(--brass);
+}
+
+.users-eye svg {
+  width: 18px;
+  height: 18px;
+}
+
+.users-eye:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
 .users-item__toggle:disabled {
   opacity: 0.5;
   cursor: not-allowed;
