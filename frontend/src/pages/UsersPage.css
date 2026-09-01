@@ -90,6 +90,8 @@
   padding: 10px 12px;
   outline: none;
   color-scheme: light;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .users-form input:focus-visible,
@@ -193,18 +195,27 @@
   background: rgba(166, 64, 44, 0.08);
 }
 
-.users-field--password {
+.users-item__toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Password field with eye toggle — wrapper is scoped to JUST the input,
+   not the whole label, so the button can center against the input's own
+   height reliably instead of guessing a fixed pixel offset. */
+.users-password-wrap {
   position: relative;
 }
 
-.users-field--password input {
+.users-password-wrap input {
   padding-right: 44px;
 }
 
 .users-eye {
   position: absolute;
-  right: 12px;
-  top: 36px;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 32px;
   height: 32px;
   border: none;
@@ -215,7 +226,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 6px;
-  transition: color 150ms ease;
+  padding: 0;
 }
 
 .users-eye:hover {
@@ -230,9 +241,4 @@
 .users-eye:focus-visible {
   outline: 2px solid var(--brass);
   outline-offset: 2px;
-}
-
-.users-item__toggle:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }

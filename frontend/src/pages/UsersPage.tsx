@@ -130,25 +130,27 @@ export default function UsersPage({ onBack }: { onBack: () => void }) {
               placeholder="john@castone.com"
             />
           </label>
-          <label className="users-field--password">
+          <label>
             <span>Password</span>
-            <input
-              type={showPassword ? "text" : "password"}
-              value={form.password}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, password: e.target.value }))
-              }
-              placeholder="Min. 6 characters"
-            />
-            <button
-              type="button"
-              className="users-eye"
-              onClick={() => setShowPassword((s) => !s)}
-              aria-label={showPassword ? "Hide password" : "Show password"}
-              tabIndex={-1}
-            >
-              {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
-            </button>
+            <div className="users-password-wrap">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={form.password}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, password: e.target.value }))
+                }
+                placeholder="Min. 6 characters"
+              />
+              <button
+                type="button"
+                className="users-eye"
+                onClick={() => setShowPassword((s) => !s)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                tabIndex={-1}
+              >
+                {showPassword ? <EyeSlashIcon /> : <EyeIcon />}
+              </button>
+            </div>
           </label>
           <label>
             <span>Role</span>
